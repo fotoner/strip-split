@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사진 세로 분할</title>
+<meta name="description" content="사진 한 장을 세로 띠 최대 20장으로 나눕니다.">
+<!-- 공유 카드. 주소는 배포 위치가 정해지면 이 두 줄(og:url, og:image)만 고친다. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="사진 세로 분할">
+<meta property="og:description" content="사진 한 장을 세로 띠 최대 20장으로 나눕니다.">
+<meta property="og:url" content="https://fotoner.github.io/strip-split/">
+<meta property="og:image" content="https://fotoner.github.io/strip-split/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2314213d'/%3E%3Cpath d='M7 7h4v18H7zM14 7h4v18h-4zM21 7h4v18h-4z' fill='%23ffd60a'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --ink: #14213d;
+    --sub: #5a6478;
+    --strip: #ffd60a;
+    --strip-ink: #14213d;
+    --danger: #c62828;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0e17;
+      --ink: #f1f3f8;
+      --sub: #9aa5b8;
+      --danger: #ff8a7a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  /* 한자가 그 언어의 글꼴로 나오게 언어별로 대체 글꼴을 나눈다. */
+  body:lang(ko) {
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    word-break: keep-all;
+  }
+  body:lang(ja) {
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  }
+  main {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 12px 20px 56px;
+  }
+  body.drag main {
+    outline: 2px dashed var(--ink);
+    outline-offset: -6px;
+  }
+  :focus-visible, .pick:focus-within {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  [hidden] { display: none !important; }
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .lang { display: flex; }
+  .lang button {
+    min-width: 40px;
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--sub);
+    font: 500 13px var(--mono);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .lang button[aria-pressed="true"] {
+    color: var(--ink);
+    font-weight: 700;
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 6px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 20px;
+    border: 1.5px solid var(--ink);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.primary {
+    background: var(--ink);
+    color: var(--bg);
+  }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .link {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 0;
+    background: none;
+    color: var(--sub);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    cursor: pointer;
+  }
+
+  /* 첫 화면 */
+  .landing {
+    display: grid;
+    gap: 36px;
+  }
+  .lead {
+    margin: 0 0 24px;
+    font-size: clamp(28px, 4.4vw, 46px);
+    font-weight: 800;
+    line-height: 1.24;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .pick {
+    width: 100%;
+    max-width: 340px;
+    min-height: 56px;
+    font-size: 17px;
+  }
+  .note {
+    margin: 14px 0 0;
+    color: var(--sub);
+    font-size: 14px;
+  }
+  .dropnote { display: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .dropnote { display: block; }
+  }
+  @media (min-width: 860px) {
+    .landing {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      gap: 56px;
+      align-items: center;
+      padding-top: 40px;
+    }
+  }
+
+  /* 숫자 한 장을 조각으로 벌려 놓은 그림. 조각 번호는 받는 파일 번호와 같다. */
+  .demo {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  @media (max-width: 859.98px) {
+    .demo { order: -1; } /* 한 단 화면에서는 그림이 맨 위 */
+  }
+  #pic rect { fill: var(--strip); }
+  #pic text {
+    fill: var(--strip-ink);
+    font: 900 270px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    text-anchor: middle;
+  }
+  .demo .mark {
+    fill: var(--sub);
+    font: 500 9.5px var(--mono);
+    text-anchor: middle;
+  }
+
+  /* 작업 화면 */
+  .sheet {
+    width: min(100%, calc(54vh * var(--ar, 1)), var(--w, 100%));
+    margin: 0 auto;
+    container-type: inline-size;
+  }
+  #preview {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .marks {
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    column-gap: var(--gap);
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--sub);
+    font: 500 clamp(7px, calc(50cqw / var(--n)), 11px)/1 var(--mono);
+    text-align: center;
+  }
+  .marks li {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  #meta {
+    margin: 14px 0 0;
+    color: var(--sub);
+    font: 13px var(--mono);
+    text-align: center;
+  }
+  .count {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .count label { font-weight: 600; }
+  .count input { accent-color: var(--ink); }
+  .count output {
+    min-width: 2ch;
+    font: 800 30px/1 var(--mono);
+    text-align: right;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .actions .btn { flex: 1 1 140px; }
+  .actions .primary { order: -1; flex-basis: 100%; min-height: 56px; font-size: 17px; }
+  .actions .link { flex-basis: 100%; }
+  @media (min-width: 640px) {
+    .actions .btn { flex: 0 0 auto; }
+    .actions .primary { flex-basis: auto; min-height: 48px; font-size: inherit; }
+    .actions .link { flex-basis: auto; margin-left: auto; }
+  }
+  #error {
+    margin: 16px 0 0;
+    color: var(--danger);
+  }
+  .foot {
+    margin-top: 64px;
+    color: var(--sub);
+    font-size: 13px;
+    text-align: center;
+  }
+  .foot a {
+    color: var(--ink);
+    font-family: var(--mono);
+    text-underline-offset: 4px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1 data-i18n="title">사진 세로 분할</h1>
+    <div class="lang" id="lang" role="group" data-i18n-label="language" aria-label="언어"></div>
+  </header>
+
+  <section id="landing" class="landing">
+    <div>
+      <p class="lead" data-i18n="lead">사진 한 장을 세로 띠 최대 20장으로 나눕니다.</p>
+      <label class="btn primary pick">
+        <input class="sr" type="file" id="file" accept="image/*">
+        <span data-i18n="pick">사진 선택</span>
+      </label>
+      <p class="note dropnote" data-i18n="dropNote">끌어다 놓거나 붙여넣어도 됩니다.</p>
+      <p class="note" data-i18n="privacy">사진은 이 기기 안에서만 처리되며 어디에도 전송되지 않습니다.</p>
+    </div>
+    <svg class="demo" id="demo" aria-hidden="true">
+      <defs>
+        <g id="pic">
+          <rect width="400" height="300"/>
+          <text x="200" y="247"></text>
+        </g>
+      </defs>
+    </svg>
+  </section>
+
+  <section id="work" hidden>
+    <figure class="sheet" id="sheet">
+      <canvas id="preview" role="img" data-i18n-label="preview" aria-label="분할 미리보기"></canvas>
+      <ol class="marks" id="marks" aria-hidden="true"></ol>
+    </figure>
+    <p id="meta"></p>
+    <div class="count">
+      <label for="n" data-i18n="count">분할 수</label>
+      <input type="range" id="n" min="2" max="20" step="1" value="20">
+      <output id="nOut" for="n">20</output>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="share" data-i18n="share" hidden disabled>공유 · 저장</button>
+      <button type="button" class="btn" id="each" data-i18n="each" disabled>한 장씩 받기</button>
+      <button type="button" class="btn" id="zip" data-i18n="zip" disabled>ZIP 받기</button>
+      <button type="button" class="link" id="reset" data-i18n="reset">다른 사진</button>
+    </div>
+  </section>
+
+  <p id="error" role="alert" hidden></p>
+
+  <footer class="foot">
+    <span data-i18n="credit">만든 사람</span>
+    <a href="https://x.com/fotoner_p" target="_blank" rel="noopener">@fotoner_p</a>
+  </footer>
+</main>
+
+<script>
+'use strict';
+
+// ---- 문구 ----
+// 언어를 더하려면 같은 키를 가진 묶음을 하나 추가한다. 빠진 키는 FALLBACK 문구로 나온다.
+const I18N = {
+  ko: {
+    name: '한국어',
+    title: '사진 세로 분할',
+    lead: '사진 한 장을 세로 띠 최대 20장으로 나눕니다.',
+    pick: '사진 선택',
+    dropNote: '끌어다 놓거나 붙여넣어도 됩니다.',
+    privacy: '사진은 이 기기 안에서만 처리되며 어디에도 전송되지 않습니다.',
+    credit: '만든 사람',
+    language: '언어',
+    preview: '분할 미리보기',
+    count: '분할 수',
+    meta: '{w}×{h} → {n}장 · 각 {each}',
+    share: '공유 · 저장',
+    each: '한 장씩 받기',
+    zip: 'ZIP 받기',
+    reset: '다른 사진',
+    errNotImage: '이 파일은 사진으로 열 수 없습니다.',
+    errTooNarrow: '가로가 2픽셀보다 좁아 나눌 수 없습니다.',
+    errTooBig: '사진이 너무 커서 나누지 못했습니다.',
+    errShare: '공유하지 못했습니다. 한 장씩 받기를 써 주세요.',
+  },
+  ja: {
+    name: '日本語',
+    title: '写真の縦分割',
+    lead: '1枚の写真を、縦長の短冊に最大20枚まで分割します。',
+    pick: '写真を選ぶ',
+    dropNote: 'ドラッグ＆ドロップや貼り付けでも読み込めます。',
+    privacy: '写真はこの端末の中だけで処理され、どこにも送信されません。',
+    credit: '作った人',
+    language: '言語',
+    preview: '分割プレビュー',
+    count: '分割数',
+    meta: '{w}×{h} → {n}枚 · 各 {each}',
+    share: '共有・保存',
+    each: '1枚ずつ保存',
+    zip: 'ZIPで保存',
+    reset: '別の写真',
+    errNotImage: 'このファイルは画像として開けません。',
+    errTooNarrow: '横幅が2ピクセル未満のため分割できません。',
+    errTooBig: '写真が大きすぎて分割できませんでした。',
+    errShare: '共有できませんでした。「1枚ずつ保存」をお試しください。',
+  },
+  en: {
+    name: 'English',
+    title: 'Photo Strip Splitter',
+    lead: 'Split one photo into up to 20 vertical strips.',
+    pick: 'Choose a photo',
+    dropNote: 'You can also drag and drop or paste.',
+    privacy: 'Your photo stays on this device and is never uploaded.',
+    credit: 'Made by',
+    language: 'Language',
+    preview: 'Split preview',
+    count: 'Strips',
+    meta: '{w}×{h} → {n} strips · {each} each',
+    share: 'Share / Save',
+    each: 'Download each',
+    zip: 'Download ZIP',
+    reset: 'Another photo',
+    errNotImage: 'This file can’t be opened as an image.',
+    errTooNarrow: 'The image is narrower than 2 pixels and can’t be split.',
+    errTooBig: 'The photo is too large to split.',
+    errShare: 'Couldn’t share. Try “Download each” instead.',
+  },
+};
+const FALLBACK = 'en';
+const LANG_KEY = 'strip-split.lang';
+
+const MAX_N = 20;
+// 크로미움은 파일 10개·합계 50MB를 넘으면 share()를 거부한다(canShare는 통과한다).
+const CHROMIUM_SHARE_FILES = 10;
+const CHROMIUM_SHARE_BYTES = 50 * 1024 * 1024;
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  lang: $('lang'), landing: $('landing'), demo: $('demo'), file: $('file'),
+  work: $('work'), sheet: $('sheet'), preview: $('preview'), marks: $('marks'),
+  meta: $('meta'), n: $('n'), nOut: $('nOut'),
+  share: $('share'), each: $('each'), zip: $('zip'), reset: $('reset'), error: $('error'),
+};
+
+// img: 원본, files: 분할 결과(File[]), gen: 진행 중인 분할 작업 번호, error: 떠 있는 오류의 문구 키
+const state = {
+  img: null, url: null, base: 'split', type: 'image/png',
+  files: null, gen: 0, timer: 0, busy: false, error: null,
+};
+
+// ---- 언어 ----
+function pickLang() {
+  let saved = null;
+  try { saved = localStorage.getItem(LANG_KEY); } catch {}
+  const wanted = [
+    new URLSearchParams(location.search).get('lang'),
+    saved,
+    ...(navigator.languages || [navigator.language]),
+  ];
+  for (const w of wanted) {
+    const code = String(w || '').toLowerCase().split('-')[0];
+    if (Object.hasOwn(I18N, code)) return code;
+  }
+  return FALLBACK;
+}
+
+let lang = pickLang();
+
+function t(key, vars) {
+  const text = I18N[lang][key] ?? I18N[FALLBACK][key] ?? key;
+  return vars ? text.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m)) : text;
+}
+
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  document.querySelector('meta[name="description"]').content = t('lead');
+  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
+  for (const node of document.querySelectorAll('[data-i18n-label]')) node.setAttribute('aria-label', t(node.dataset.i18nLabel));
+  for (const b of el.lang.children) b.setAttribute('aria-pressed', String(b.lang === lang));
+  if (state.img) describe(Number(el.n.value));
+  if (state.error) el.error.textContent = t(state.error);
+}
+
+function setLang(code) {
+  lang = code;
+  try { localStorage.setItem(LANG_KEY, lang); } catch {}
+  // 주소의 ?lang= 이 고른 언어를 다시 덮지 않게 뺀다.
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.has('lang')) {
+      u.searchParams.delete('lang');
+      history.replaceState(null, '', u);
+    }
+  } catch {}
+  applyLang();
+}
+
+for (const [code, dict] of Object.entries(I18N)) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.lang = code;
+  b.textContent = code.toUpperCase();
+  b.setAttribute('aria-label', dict.name);
+  b.addEventListener('click', () => setLang(code));
+  el.lang.append(b);
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// ---- 첫 화면 그림: 숫자 한 장(400×300)을 MAX_N 조각으로 벌려 놓는다 ----
+(function drawDemo() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const w = 400 / MAX_N, gap = 3, cuts = MAX_N - 1;
+  el.demo.setAttribute('viewBox', `0 0 ${400 + gap * cuts} 318`);
+  el.demo.querySelector('#pic text').textContent = MAX_N;
+  // 처음 들어올 때 한 번: 붙어 있던 그림이 왼쪽부터 한 칼씩 잘려 벌어진다.
+  // k번째 칼질마다 그 왼쪽 조각들은 왼쪽으로, 오른쪽 조각들은 오른쪽으로 반 칸씩 밀린다.
+  const timing = { duration: 950, delay: 450, easing: 'cubic-bezier(0.3, 0.2, 0.2, 1)', fill: 'backwards' };
+  const moving = !!el.demo.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (let i = 0; i < MAX_N; i++) {
+    const x = i * (w + gap);
+    const strip = document.createElementNS(NS, 'svg');
+    strip.setAttribute('x', x);
+    strip.setAttribute('width', w);
+    strip.setAttribute('height', 300);
+    strip.setAttribute('viewBox', `${i * w} 0 ${w} 300`);
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', '#pic');
+    strip.append(use);
+    const mark = document.createElementNS(NS, 'text');
+    mark.setAttribute('class', 'mark');
+    mark.setAttribute('x', x + w / 2);
+    mark.setAttribute('y', 314);
+    mark.textContent = pad2(i + 1);
+    const piece = document.createElementNS(NS, 'g');
+    piece.append(strip, mark);
+    el.demo.append(piece);
+    if (!moving) continue;
+    const joined = gap * (cuts / 2 - i); // 틈 없이 붙어 가운데에 놓인 자리
+    piece.animate([
+      { transform: `translateX(${joined}px)` },
+      { transform: `translateX(${joined + i * gap / 2}px)`, offset: i / cuts },
+      { transform: 'translateX(0px)' },
+    ], timing);
+    mark.animate([
+      { opacity: 0 },
+      { opacity: 0, offset: Math.max(0, (i - 0.5) / cuts) },
+      { opacity: 1, offset: Math.min(1, (i + 0.5) / cuts) },
+      { opacity: 1 },
+    ], timing);
+  }
+})();
+
+// ---- 분할 ----
+/** i번째 조각의 [시작 x, 끝 x). 남는 픽셀은 반올림으로 고르게 나눈다. */
+function bounds(width, n, i) {
+  return [Math.round(i * width / n), Math.round((i + 1) * width / n)];
+}
+
+function showError(key) {
+  state.error = key;
+  el.error.textContent = t(key);
+  el.error.hidden = false;
+}
+function clearError() {
+  state.error = null;
+  el.error.hidden = true;
+  el.error.textContent = '';
+}
+
+async function load(file) {
+  if (!file) return;
+  clearError();
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.src = url;
+  try {
+    await img.decode();
+  } catch {
+    URL.revokeObjectURL(url);
+    showError('errNotImage');
+    return;
+  }
+  if (img.naturalWidth < 2) {
+    URL.revokeObjectURL(url);
+    showError('errTooNarrow');
+    return;
+  }
+  if (state.url) URL.revokeObjectURL(state.url);
+  state.img = img;
+  state.url = url;
+  state.base = (file.name || '').replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]/g, '_').trim() || 'split';
+  state.type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+
+  const max = Math.min(MAX_N, img.naturalWidth);
+  el.n.max = String(max);
+  if (Number(el.n.value) > max) el.n.value = String(max);
+
+  el.landing.hidden = true;
+  el.work.hidden = false;
+  update();
+}
+
+function update() {
+  const n = Number(el.n.value);
+  el.nOut.value = String(n);
+  drawPreview(n);
+  describe(n);
+  scheduleSplit(n);
+}
+
+function drawPreview(n) {
+  const img = state.img;
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const scale = Math.min(1, 1600 / W, 1600 / H);
+  const gap = Math.max(2, Math.round(W * scale * 0.004));
+  const cv = el.preview;
+  cv.width = Math.round(W * scale) + gap * (n - 1);
+  cv.height = Math.max(1, Math.round(H * scale));
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  for (let i = 0; i < n; i++) {
+    const [x0, x1] = bounds(W, n, i);
+    const d0 = Math.round(x0 * scale), d1 = Math.round(x1 * scale);
+    ctx.drawImage(img, x0, 0, x1 - x0, H, d0 + gap * i, 0, Math.max(1, d1 - d0), cv.height);
+  }
+  // 조각 번호 줄이 미리보기 조각과 같은 칸에 놓이게 크기를 넘긴다.
+  el.sheet.style.setProperty('--ar', cv.width / cv.height);
+  el.sheet.style.setProperty('--w', `${cv.width}px`);
+  el.sheet.style.setProperty('--n', n);
+  el.sheet.style.setProperty('--gap', `${gap / cv.width * 100}%`);
+  el.marks.replaceChildren(...Array.from({ length: n }, (_, i) => {
+    const li = document.createElement('li');
+    li.textContent = pad2(i + 1);
+    return li;
+  }));
+}
+
+function describe(n) {
+  const W = state.img.naturalWidth, H = state.img.naturalHeight;
+  let lo = Infinity, hi = 0;
+  for (let i = 0; i < n; i++) {
+    const [x0, x1] = bounds(W, n, i);
+    lo = Math.min(lo, x1 - x0);
+    hi = Math.max(hi, x1 - x0);
+  }
+  const each = lo === hi ? `${lo}×${H}` : `${lo}~${hi}×${H}`;
+  el.meta.textContent = t('meta', { w: W, h: H, n, each });
+}
+
+function scheduleSplit(n) {
+  state.gen++;
+  state.files = null;
+  refreshActions();
+  clearTimeout(state.timer);
+  const gen = state.gen;
+  state.timer = setTimeout(() => split(n, gen), 150);
+}
+
+async function split(n, gen) {
+  const img = state.img;
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const ext = state.type === 'image/jpeg' ? 'jpg' : 'png';
+  const files = [];
+  for (let i = 0; i < n; i++) {
+    const [x0, x1] = bounds(W, n, i);
+    const cv = document.createElement('canvas');
+    cv.width = x1 - x0;
+    cv.height = H;
+    cv.getContext('2d').drawImage(img, x0, 0, x1 - x0, H, 0, 0, x1 - x0, H);
+    const blob = await new Promise((done) => cv.toBlob(done, state.type, 0.95));
+    if (gen !== state.gen) return;
+    if (!blob) {
+      showError('errTooBig');
+      return;
+    }
+    const name = `${state.base}_${pad2(i + 1)}.${ext}`;
+    files.push(new File([blob], name, { type: state.type }));
+  }
+  clearError();
+  state.files = files;
+  refreshActions();
+}
+
+// ---- 받기 ----
+function canShareFiles(files) {
+  if (!navigator.share || !navigator.canShare) return false;
+  if (navigator.userAgentData) {
+    const bytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (files.length > CHROMIUM_SHARE_FILES || bytes > CHROMIUM_SHARE_BYTES) return false;
+  }
+  try { return navigator.canShare({ files }); } catch { return false; }
+}
+
+/** 버튼 활성 상태와 주 버튼을 다시 정한다. 조각을 만드는 동안에는 배치를 그대로 두고 잠그기만 한다. */
+function refreshActions() {
+  const buttons = [el.share, el.each, el.zip];
+  const ready = !!state.files && !state.busy;
+  for (const b of buttons) b.disabled = !ready;
+  if (!state.files) return;
+  const share = canShareFiles(state.files);
+  el.share.hidden = !share;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const primary = share ? el.share : touch ? el.each : el.zip;
+  for (const b of buttons) b.classList.toggle('primary', b === primary);
+}
+
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+el.share.addEventListener('click', async () => {
+  if (!state.files) return;
+  clearError();
+  try {
+    await navigator.share({ files: state.files });
+  } catch (err) {
+    if (err.name !== 'AbortError') showError('errShare');
+  }
+});
+
+el.each.addEventListener('click', async () => {
+  const files = state.files;
+  if (!files) return;
+  state.busy = true;
+  refreshActions();
+  for (const f of files) {
+    if (state.files !== files) break;
+    download(f, f.name);
+    await sleep(250);
+  }
+  state.busy = false;
+  refreshActions();
+});
+
+el.zip.addEventListener('click', async () => {
+  const files = state.files;
+  if (!files) return;
+  download(await makeZip(files), `${state.base}_${files.length}.zip`);
+});
+
+// ---- ZIP (무압축 저장) ----
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+async function makeZip(files) {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const body = [], central = [];
+  let offset = 0, centralSize = 0;
+  for (const f of files) {
+    const data = new Uint8Array(await f.arrayBuffer());
+    const name = enc.encode(f.name);
+    const crc = crc32(data);
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 0x0800, true); // 파일명 UTF-8
+    local.setUint16(8, 0, true);      // 무압축
+    local.setUint16(10, time, true);
+    local.setUint16(12, date, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, name.length, true);
+    body.push(local, name, data);
+
+    const entry = new DataView(new ArrayBuffer(46));
+    entry.setUint32(0, 0x02014b50, true);
+    entry.setUint16(4, 20, true);
+    entry.setUint16(6, 20, true);
+    entry.setUint16(8, 0x0800, true);
+    entry.setUint16(10, 0, true);
+    entry.setUint16(12, time, true);
+    entry.setUint16(14, date, true);
+    entry.setUint32(16, crc, true);
+    entry.setUint32(20, data.length, true);
+    entry.setUint32(24, data.length, true);
+    entry.setUint16(28, name.length, true);
+    entry.setUint32(42, offset, true);
+    central.push(entry, name);
+
+    offset += 30 + name.length + data.length;
+    centralSize += 46 + name.length;
+  }
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, offset, true);
+  return new Blob([...body, ...central, end], { type: 'application/zip' });
+}
+
+// ---- 입력 ----
+el.file.addEventListener('change', () => {
+  load(el.file.files[0]);
+  el.file.value = '';
+});
+
+el.n.addEventListener('input', () => { if (state.img) update(); });
+
+el.reset.addEventListener('click', () => {
+  state.gen++;
+  clearTimeout(state.timer);
+  if (state.url) URL.revokeObjectURL(state.url);
+  state.img = null;
+  state.url = null;
+  state.files = null;
+  clearError();
+  el.work.hidden = true;
+  el.landing.hidden = false;
+  el.file.focus();
+});
+
+const pickImage = (list) => [...(list || [])].find((f) => f.type.startsWith('image/'));
+
+document.addEventListener('paste', (e) => {
+  const f = pickImage(e.clipboardData && e.clipboardData.files);
+  if (f) { e.preventDefault(); load(f); }
+});
+
+let dragDepth = 0;
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  dragDepth++;
+  document.body.classList.add('drag');
+});
+document.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) document.body.classList.remove('drag');
+});
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove('drag');
+  const files = e.dataTransfer && e.dataTransfer.files;
+  if (!files || !files.length) return;
+  const f = pickImage(files);
+  if (f) load(f);
+  else showError('errNotImage');
+});
+
+applyLang();
+</script>
+</body>
+</html>
