@@ -179,8 +179,11 @@
     width: 100%;
     height: auto;
   }
+  /* 한 단 화면: 그림이 맨 위, 문구는 가운데, 버튼은 화면 폭 */
   @media (max-width: 859.98px) {
-    .demo { order: -1; } /* 한 단 화면에서는 그림이 맨 위 */
+    .demo { order: -1; }
+    .intro, #error { text-align: center; }
+    .pick { max-width: none; }
   }
   #pic rect { fill: var(--strip); }
   #pic text {
@@ -279,7 +282,7 @@
   </header>
 
   <section id="landing" class="landing">
-    <div>
+    <div class="intro">
       <p class="lead" data-i18n="lead">사진 한 장을 세로 띠 최대 20장으로 나눕니다.</p>
       <label class="btn primary pick">
         <input class="sr" type="file" id="file" accept="image/*">
